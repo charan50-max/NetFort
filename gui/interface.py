@@ -19,8 +19,8 @@ class FirewallGUI:
             "NetFort - Network Traffic Security & Access Control"
         )
 
-        self.root.geometry("1200x780")
-        self.root.minsize(1000, 700)
+        self.root.geometry("1200x820")
+        self.root.minsize(1000, 740)
 
         self.root.configure(bg="#0f172a")
 
@@ -39,6 +39,10 @@ class FirewallGUI:
 
         self.refresh_rules()
         self.update_statistics()
+        self.refresh_connections()
+
+        # Refresh once per second so connection timers count down
+        self.root.after(1000, self.tick)
 
     # =========================================================
     # STYLE
@@ -98,6 +102,15 @@ class FirewallGUI:
 
         self.port_var = tk.StringVar(
             value="23"
+        )
+
+        # Optional. Empty = stateless packet (no connection tracking)
+        self.source_port_var = tk.StringVar(
+            value=""
+        )
+
+        self.stateful_var = tk.BooleanVar(
+            value=True
         )
 
         self.protocol_var = tk.StringVar(
@@ -231,6 +244,7 @@ class FirewallGUI:
         self.create_packet_panel(left)
         self.create_statistics_panel(left)
         self.create_rule_panel(right)
+        self.create_connection_panel(right)
         self.create_log_panel(right)
 
     # =========================================================
@@ -245,8 +259,8 @@ class FirewallGUI:
             bg="#1e293b",
             fg="#38bdf8",
             font=("Segoe UI", 12, "bold"),
-            padx=15,
-            pady=15
+            padx=12,
+            pady=8
         )
 
         frame.pack(
@@ -271,9 +285,16 @@ class FirewallGUI:
 
         self.add_entry(
             frame,
-            "Port",
+            "Destination Port",
             self.port_var,
             2
+        )
+
+        self.add_entry(
+            frame,
+            "Source Port (optional)",
+            self.source_port_var,
+            3
         )
 
         tk.Label(
@@ -282,10 +303,10 @@ class FirewallGUI:
             bg="#1e293b",
             fg="#cbd5e1"
         ).grid(
-            row=3,
+            row=4,
             column=0,
             sticky="w",
-            pady=7
+            pady=4
         )
 
         protocol_combo = ttk.Combobox(
@@ -297,10 +318,10 @@ class FirewallGUI:
         )
 
         protocol_combo.grid(
-            row=3,
+            row=4,
             column=1,
             sticky="ew",
-            pady=7
+            pady=4
         )
 
         check_button = tk.Button(
@@ -314,15 +335,15 @@ class FirewallGUI:
             font=("Segoe UI", 11, "bold"),
             relief="flat",
             cursor="hand2",
-            pady=10
+            pady=8
         )
 
         check_button.grid(
-            row=4,
+            row=5,
             column=0,
             columnspan=2,
             sticky="ew",
-            pady=(15, 5)
+            pady=(10, 4)
         )
 
         generate_button = tk.Button(
@@ -338,7 +359,28 @@ class FirewallGUI:
         )
 
         generate_button.grid(
-            row=5,
+            row=6,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=5
+        )
+
+        reply_button = tk.Button(
+            frame,
+            text="SWAP TO REPLY PACKET",
+            command=self.swap_to_reply,
+            bg="#0f766e",
+            fg="white",
+            activebackground="#115e59",
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            pady=8
+        )
+
+        reply_button.grid(
+            row=7,
             column=0,
             columnspan=2,
             sticky="ew",
@@ -351,15 +393,15 @@ class FirewallGUI:
             bg="#334155",
             fg="#e2e8f0",
             font=("Segoe UI", 16, "bold"),
-            pady=15
+            pady=10
         )
 
         self.result_label.grid(
-            row=6,
+            row=8,
             column=0,
             columnspan=2,
             sticky="ew",
-            pady=(15, 0)
+            pady=(10, 0)
         )
 
         self.reason_label = tk.Label(
@@ -372,10 +414,10 @@ class FirewallGUI:
         )
 
         self.reason_label.grid(
-            row=7,
+            row=9,
             column=0,
             columnspan=2,
-            pady=10
+            pady=6
         )
 
         frame.columnconfigure(
@@ -400,7 +442,7 @@ class FirewallGUI:
             row=row,
             column=0,
             sticky="w",
-            pady=7
+            pady=4
         )
 
         entry = tk.Entry(
@@ -418,7 +460,7 @@ class FirewallGUI:
             column=1,
             sticky="ew",
             pady=7,
-            ipady=7
+            ipady=4
         )
 
     # =========================================================
@@ -465,6 +507,12 @@ class FirewallGUI:
             frame,
             "BLOCK RATE",
             3
+        )
+
+        self.connections_label = self.create_stat(
+            frame,
+            "CONNECTIONS",
+            4
         )
 
     def create_stat(
@@ -514,6 +562,267 @@ class FirewallGUI:
         return value
 
     # =========================================================
+    # CONNECTION PANEL (STATEFUL FIREWALL)
+    # =========================================================
+
+    def create_connection_panel(self, parent):
+
+        frame = tk.LabelFrame(
+            parent,
+            text="  TRACKED CONNECTIONS  ",
+            bg="#1e293b",
+            fg="#38bdf8",
+            font=("Segoe UI", 12, "bold"),
+            padx=10,
+            pady=10
+        )
+
+        frame.pack(
+            fill="x",
+            padx=12,
+            pady=(0, 12)
+        )
+
+        columns = (
+            "initiator",
+            "responder",
+            "protocol",
+            "state",
+            "expires",
+            "packets"
+        )
+
+        self.connection_tree = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="headings",
+            height=3
+        )
+
+        headings = {
+            "initiator": "INITIATOR",
+            "responder": "RESPONDER",
+            "protocol": "PROTO",
+            "state": "STATE",
+            "expires": "EXPIRES",
+            "packets": "PKTS F/R"
+        }
+
+        widths = {
+            "initiator": 135,
+            "responder": 135,
+            "protocol": 45,
+            "state": 88,
+            "expires": 62,
+            "packets": 70
+        }
+
+        for column in columns:
+
+            self.connection_tree.heading(
+                column,
+                text=headings[column]
+            )
+
+            self.connection_tree.column(
+                column,
+                width=widths[column],
+                anchor="center"
+            )
+
+        self.connection_tree.pack(
+            fill="x"
+        )
+
+        button_frame = tk.Frame(
+            frame,
+            bg="#1e293b"
+        )
+
+        button_frame.pack(
+            fill="x",
+            pady=(8, 0)
+        )
+
+        tk.Checkbutton(
+            button_frame,
+            text="Stateful tracking enabled",
+            variable=self.stateful_var,
+            command=self.toggle_stateful,
+            bg="#1e293b",
+            fg="#e2e8f0",
+            selectcolor="#0f172a",
+            activebackground="#1e293b",
+            activeforeground="#e2e8f0"
+        ).pack(
+            side="left"
+        )
+
+        tk.Button(
+            button_frame,
+            text="CLEAR CONNECTIONS",
+            command=self.clear_connections_clicked,
+            bg="#475569",
+            fg="white",
+            relief="flat",
+            padx=12,
+            pady=6
+        ).pack(
+            side="right"
+        )
+
+    def refresh_connections(self):
+
+        for item in self.connection_tree.get_children():
+
+            self.connection_tree.delete(item)
+
+        stateful = self.engine.stateful
+
+        for connection in stateful.get_connections():
+
+            remaining = max(
+                0,
+                int(stateful.seconds_remaining(connection))
+            )
+
+            self.connection_tree.insert(
+                "",
+                "end",
+                values=(
+                    f"{connection.source_ip}:{connection.source_port}",
+                    f"{connection.destination_ip}:{connection.destination_port}",
+                    connection.protocol,
+                    connection.state,
+                    f"{remaining}s",
+                    f"{connection.forward_packets} / "
+                    f"{connection.reply_packets}"
+                )
+            )
+
+    def tick(self):
+
+        self.update_statistics()
+        self.refresh_connections()
+
+        self.root.after(1000, self.tick)
+
+    def toggle_stateful(self):
+
+        enabled = self.stateful_var.get()
+
+        self.engine.stateful_enabled = enabled
+
+        if not enabled:
+            # Do not let old connections come back to life later
+            self.engine.reset_connections()
+
+        self.status_var.set(
+            "FIREWALL ACTIVE"
+            if enabled
+            else "FIREWALL ACTIVE (STATELESS)"
+        )
+
+        self.refresh_connections()
+        self.update_statistics()
+
+    def clear_connections_clicked(self):
+
+        self.engine.reset_connections()
+
+        self.refresh_connections()
+        self.update_statistics()
+
+    def rules_changed(self):
+        """
+        Called after a rule is added, deleted or moved.
+        Forget tracked connections so old connections cannot
+        outlive the rules that originally allowed them.
+        """
+
+        self.refresh_rules()
+
+        self.engine.reset_connections()
+
+        self.refresh_connections()
+        self.update_statistics()
+
+    def swap_to_reply(self):
+        """
+        Turn the packet in the form into its reply:
+        source and destination swap places, ports too.
+        """
+
+        source_port = self.source_port_var.get().strip()
+
+        if not source_port:
+
+            messagebox.showinfo(
+                "Source Port Needed",
+                "Enter a source port first. A reply can only be "
+                "built for a packet that has one."
+            )
+
+            return
+
+        source_ip = self.source_ip_var.get()
+        destination_ip = self.destination_ip_var.get()
+        port = self.port_var.get()
+
+        self.source_ip_var.set(destination_ip)
+        self.destination_ip_var.set(source_ip)
+
+        self.port_var.set(source_port)
+        self.source_port_var.set(port)
+
+    def build_packet(self):
+        """
+        Build a Packet from the form fields.
+        Returns None (after showing an error) if input is bad.
+        """
+
+        try:
+            port = int(
+                self.port_var.get().strip()
+            )
+
+        except ValueError:
+
+            messagebox.showerror(
+                "Invalid Port",
+                "Destination port must be a number."
+            )
+
+            return None
+
+        source_port_text = self.source_port_var.get().strip()
+
+        source_port = None
+
+        if source_port_text:
+
+            try:
+                source_port = int(source_port_text)
+
+            except ValueError:
+
+                messagebox.showerror(
+                    "Invalid Source Port",
+                    "Source port must be a number "
+                    "(or leave it empty)."
+                )
+
+                return None
+
+        return Packet(
+            source_ip=self.source_ip_var.get(),
+            destination_ip=self.destination_ip_var.get(),
+            port=port,
+            protocol=self.protocol_var.get(),
+            source_port=source_port
+        )
+
+    # =========================================================
     # RULE PANEL
     # =========================================================
 
@@ -549,7 +858,7 @@ class FirewallGUI:
             frame,
             columns=columns,
             show="headings",
-            height=10
+            height=5
         )
 
         headings = {
@@ -681,7 +990,7 @@ class FirewallGUI:
 
         self.log_text = tk.Text(
             frame,
-            height=10,
+            height=7,
             bg="#020617",
             fg="#cbd5e1",
             insertbackground="white",
@@ -737,25 +1046,10 @@ class FirewallGUI:
 
     def check_packet(self):
 
-        try:
-            port = int(
-                self.port_var.get().strip()
-            )
+        packet = self.build_packet()
 
-        except ValueError:
-            messagebox.showerror(
-                "Invalid Port",
-                "Port must be a number."
-            )
-
+        if packet is None:
             return
-
-        packet = Packet(
-            source_ip=self.source_ip_var.get(),
-            destination_ip=self.destination_ip_var.get(),
-            port=port,
-            protocol=self.protocol_var.get()
-        )
 
         result = self.engine.evaluate(packet)
 
@@ -770,6 +1064,7 @@ class FirewallGUI:
         )
 
         self.update_statistics()
+        self.refresh_connections()
 
     # =========================================================
     # DISPLAY RESULT
@@ -782,11 +1077,12 @@ class FirewallGUI:
     ):
 
         action = result["action"]
+        state = result.get("connection_state")
 
         if action == "ALLOW":
 
             self.result_label.config(
-                text="✓ PACKET ALLOWED",
+                text="\u2713 PACKET ALLOWED",
                 bg="#166534",
                 fg="#dcfce7"
             )
@@ -794,7 +1090,7 @@ class FirewallGUI:
         else:
 
             self.result_label.config(
-                text="✗ PACKET BLOCKED",
+                text="\u2717 PACKET BLOCKED",
                 bg="#991b1b",
                 fg="#fee2e2"
             )
@@ -806,16 +1102,35 @@ class FirewallGUI:
                 f"Matched Rule: #{rule}"
             )
 
+        elif state == "ESTABLISHED":
+            rule_text = (
+                "Matched Rule: None "
+                "(allowed by connection tracking)"
+            )
+
         else:
             rule_text = (
                 "Matched Rule: None"
             )
 
-        self.reason_label.config(
-            text=(
-                f"{rule_text}\n"
-                f"Reason: {result['reason']}"
+        lines = [
+            rule_text,
+            f"Reason: {result['reason']}"
+        ]
+
+        if state == "NEW":
+            lines.append(
+                "Connection: NEW - replies to this packet "
+                "will now be allowed"
             )
+
+        elif state == "ESTABLISHED":
+            lines.append(
+                "Connection: ESTABLISHED"
+            )
+
+        self.reason_label.config(
+            text="\n".join(lines)
         )
 
     # =========================================================
@@ -869,9 +1184,16 @@ class FirewallGUI:
             str(random.choice(ports))
         )
 
-        self.protocol_var.set(
-            random.choice(protocols)
-        )
+        protocol = random.choice(protocols)
+
+        self.protocol_var.set(protocol)
+
+        if protocol == "ICMP":
+            self.source_port_var.set("")
+        else:
+            self.source_port_var.set(
+                str(random.randint(1024, 65535))
+            )
 
     # =========================================================
     # SIMULATE MULTIPLE PACKETS
@@ -913,12 +1235,37 @@ class FirewallGUI:
                 "ICMP"
             ]
 
-            packet = Packet(
-                source_ip=random.choice(source_ips),
-                destination_ip=random.choice(destinations),
-                port=random.choice(ports),
-                protocol=random.choice(protocols)
-            )
+            existing = self.engine.stateful.get_connections()
+
+            if existing and random.random() < 0.3:
+
+                # Send the REPLY of a connection that is already
+                # tracked, to show stateful matching in action
+                connection = random.choice(existing)
+
+                packet = Packet(
+                    source_ip=connection.destination_ip,
+                    destination_ip=connection.source_ip,
+                    port=connection.source_port,
+                    protocol=connection.protocol,
+                    source_port=connection.destination_port
+                )
+
+            else:
+
+                protocol = random.choice(protocols)
+
+                packet = Packet(
+                    source_ip=random.choice(source_ips),
+                    destination_ip=random.choice(destinations),
+                    port=random.choice(ports),
+                    protocol=protocol,
+                    source_port=(
+                        None
+                        if protocol == "ICMP"
+                        else random.randint(1024, 65535)
+                    )
+                )
 
             result = self.engine.evaluate(
                 packet
@@ -930,6 +1277,7 @@ class FirewallGUI:
             )
 
         self.update_statistics()
+        self.refresh_connections()
 
         messagebox.showinfo(
             "Simulation Complete",
@@ -1106,7 +1454,7 @@ class FirewallGUI:
 
             if success:
 
-                self.refresh_rules()
+                self.rules_changed()
 
                 dialog.destroy()
 
@@ -1183,7 +1531,7 @@ class FirewallGUI:
 
         if success:
 
-            self.refresh_rules()
+            self.rules_changed()
 
             messagebox.showinfo(
                 "Deleted",
@@ -1212,7 +1560,7 @@ class FirewallGUI:
 
         if self.rule_manager.move_rule_up(index):
 
-            self.refresh_rules()
+            self.rules_changed()
 
     # =========================================================
     # MOVE RULE DOWN
@@ -1236,7 +1584,7 @@ class FirewallGUI:
 
         if self.rule_manager.move_rule_down(index):
 
-            self.refresh_rules()
+            self.rules_changed()
 
     # =========================================================
     # LOGGING
@@ -1258,21 +1606,32 @@ class FirewallGUI:
         )
 
         rule = result["matched_rule"]
+        state = result.get("connection_state")
 
-        rule_text = (
-            f"RULE#{rule}"
-            if rule
-            else "DEFAULT"
+        if rule:
+            rule_text = f"RULE#{rule}"
+        elif state == "ESTABLISHED":
+            rule_text = "STATE"
+        else:
+            rule_text = "DEFAULT"
+
+        sport_text = (
+            "-"
+            if packet.source_port is None
+            else str(packet.source_port)
         )
 
         line = (
             f"{timestamp} | "
             f"SRC={packet.source_ip} | "
+            f"SPORT={sport_text} | "
             f"DST={packet.destination_ip} | "
             f"PORT={packet.port} | "
             f"PROTO={packet.protocol} | "
             f"ACTION={result['action']} | "
-            f"{rule_text}\n"
+            f"{rule_text}"
+            + (f" | CONN={state}" if state else "")
+            + "\n"
         )
 
         with open(
@@ -1343,6 +1702,10 @@ class FirewallGUI:
 
         self.rate_label.config(
             text=f"{stats['block_rate']:.1f}%"
+        )
+
+        self.connections_label.config(
+            text=str(stats["active_connections"])
         )
 
     # =========================================================

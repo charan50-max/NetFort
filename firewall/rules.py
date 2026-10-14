@@ -1,38 +1,129 @@
 import json
 import os
 import ipaddress
+from typing import Optional, Dict, Any, List
 
 
 DEFAULT_RULES = [
     {
+        "rule_id": "RULE-1",
+        "name": "Allow Web HTTP",
+        "description": "Allow internal client 192.168.1.10 to reach HTTP port 80",
         "source_ip": "192.168.1.10",
         "destination_ip": "*",
         "port": "80",
         "protocol": "TCP",
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "enabled": True
     },
     {
+        "rule_id": "RULE-2",
+        "name": "Block Telnet Outbound",
+        "description": "Prevent insecure Telnet protocol",
         "source_ip": "192.168.1.20",
         "destination_ip": "*",
         "port": "23",
         "protocol": "TCP",
-        "action": "BLOCK"
+        "action": "BLOCK",
+        "enabled": True
     },
     {
+        "rule_id": "RULE-3",
+        "name": "Allow Outbound HTTPS",
+        "description": "Permit standard TLS/HTTPS traffic for all internal clients",
         "source_ip": "*",
         "destination_ip": "*",
         "port": "443",
         "protocol": "TCP",
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "enabled": True
     },
     {
+        "rule_id": "RULE-4",
+        "name": "Block Rogue Host",
+        "description": "Explicitly deny all traffic from rogue host 10.0.0.5",
         "source_ip": "10.0.0.5",
         "destination_ip": "*",
         "port": "*",
         "protocol": "ANY",
-        "action": "BLOCK"
+        "action": "BLOCK",
+        "enabled": True
+    },
+    {
+        "rule_id": "RULE-5",
+        "name": "Allow DNS Queries",
+        "description": "Permit UDP DNS resolution",
+        "source_ip": "*",
+        "destination_ip": "*",
+        "port": "53",
+        "protocol": "UDP",
+        "action": "ALLOW",
+        "enabled": True
     }
 ]
+
+PRESETS = {
+    "balanced": DEFAULT_RULES,
+    "strict": [
+        {
+            "rule_id": "RULE-1",
+            "name": "Allow HTTPS Only",
+            "description": "Restrict internal hosts strictly to HTTPS",
+            "source_ip": "192.168.1.0/24",
+            "destination_ip": "*",
+            "port": "443",
+            "protocol": "TCP",
+            "action": "ALLOW",
+            "enabled": True
+        },
+        {
+            "rule_id": "RULE-2",
+            "name": "Allow Secure DNS",
+            "description": "Permit DNS lookups to internal resolver",
+            "source_ip": "192.168.1.0/24",
+            "destination_ip": "*",
+            "port": "53",
+            "protocol": "UDP",
+            "action": "ALLOW",
+            "enabled": True
+        },
+        {
+            "rule_id": "RULE-3",
+            "name": "Block All Inbound Probes",
+            "description": "Explicit block on SSH and remote administration",
+            "source_ip": "*",
+            "destination_ip": "*",
+            "port": "22",
+            "protocol": "TCP",
+            "action": "BLOCK",
+            "enabled": True
+        }
+    ],
+    "order_demo": [
+        {
+            "rule_id": "RULE-1",
+            "name": "Broad Allow TCP",
+            "description": "Broad allow rule placed before specific block (demonstrates rule shadow)",
+            "source_ip": "*",
+            "destination_ip": "*",
+            "port": "80",
+            "protocol": "TCP",
+            "action": "ALLOW",
+            "enabled": True
+        },
+        {
+            "rule_id": "RULE-2",
+            "name": "Specific Deny 192.168.1.50",
+            "description": "This rule will be shadowed by Rule #1 because of First-Match-Wins!",
+            "source_ip": "192.168.1.50",
+            "destination_ip": "*",
+            "port": "80",
+            "protocol": "TCP",
+            "action": "BLOCK",
+            "enabled": True
+        }
+    ]
+}
 
 
 class FirewallRule:
@@ -46,13 +137,21 @@ class FirewallRule:
         destination_ip="*",
         port="*",
         protocol="ANY",
-        action="BLOCK"
+        action="BLOCK",
+        rule_id=None,
+        name=None,
+        description=None,
+        enabled=True
     ):
         self.source_ip = str(source_ip).strip()
         self.destination_ip = str(destination_ip).strip()
         self.port = str(port).strip()
         self.protocol = str(protocol).upper().strip()
         self.action = str(action).upper().strip()
+        self.rule_id = rule_id or "RULE-CUSTOM"
+        self.name = name or f"{self.action} {self.protocol} :{self.port}"
+        self.description = description or ""
+        self.enabled = enabled
 
     def validate(self):
         """
@@ -62,14 +161,20 @@ class FirewallRule:
         # Source IP
         if self.source_ip != "*":
             try:
-                ipaddress.ip_address(self.source_ip)
+                if "/" in self.source_ip:
+                    ipaddress.ip_network(self.source_ip, strict=False)
+                else:
+                    ipaddress.ip_address(self.source_ip)
             except ValueError:
                 return False, "Invalid source IP."
 
         # Destination IP
         if self.destination_ip != "*":
             try:
-                ipaddress.ip_address(self.destination_ip)
+                if "/" in self.destination_ip:
+                    ipaddress.ip_network(self.destination_ip, strict=False)
+                else:
+                    ipaddress.ip_address(self.destination_ip)
             except ValueError:
                 return False, "Invalid destination IP."
 
@@ -98,20 +203,33 @@ class FirewallRule:
 
         return True, "Valid rule"
 
+    def _ip_matches(self, pattern: str, target: str) -> bool:
+        if pattern == "*":
+            return True
+        if pattern == target:
+            return True
+        if "/" in pattern:
+            try:
+                net = ipaddress.ip_network(pattern, strict=False)
+                addr = ipaddress.ip_address(target)
+                return addr in net
+            except ValueError:
+                return False
+        return False
+
     def matches(self, packet):
         """
         Check whether this rule matches a packet.
         """
+        if not self.enabled:
+            return False
 
         # Source IP
-        if self.source_ip != "*" and self.source_ip != packet.source_ip:
+        if not self._ip_matches(self.source_ip, packet.source_ip):
             return False
 
         # Destination IP
-        if (
-            self.destination_ip != "*"
-            and self.destination_ip != packet.destination_ip
-        ):
+        if not self._ip_matches(self.destination_ip, packet.destination_ip):
             return False
 
         # Port
@@ -128,11 +246,15 @@ class FirewallRule:
 
     def to_dict(self):
         return {
+            "rule_id": self.rule_id,
+            "name": self.name,
+            "description": self.description,
             "source_ip": self.source_ip,
             "destination_ip": self.destination_ip,
             "port": self.port,
             "protocol": self.protocol,
-            "action": self.action
+            "action": self.action,
+            "enabled": self.enabled
         }
 
     @classmethod
@@ -142,7 +264,11 @@ class FirewallRule:
             destination_ip=data.get("destination_ip", "*"),
             port=data.get("port", "*"),
             protocol=data.get("protocol", "ANY"),
-            action=data.get("action", "BLOCK")
+            action=data.get("action", "BLOCK"),
+            rule_id=data.get("rule_id"),
+            name=data.get("name"),
+            description=data.get("description"),
+            enabled=data.get("enabled", True)
         )
 
 
@@ -186,10 +312,11 @@ class RuleManager:
             ) as file:
                 data = json.load(file)
 
-            self.rules = [
-                FirewallRule.from_dict(rule)
-                for rule in data
-            ]
+            self.rules = []
+            for idx, rule in enumerate(data):
+                if "rule_id" not in rule:
+                    rule["rule_id"] = f"RULE-{idx + 1}"
+                self.rules.append(FirewallRule.from_dict(rule))
 
         except (json.JSONDecodeError, OSError):
             self.rules = [
@@ -216,6 +343,24 @@ class RuleManager:
                 indent=4
             )
 
+    def load_preset(self, preset_name: str) -> bool:
+        """
+        Load a preset ruleset.
+        """
+        preset = PRESETS.get(preset_name)
+        if not preset:
+            return False
+        self.rules = [FirewallRule.from_dict(r) for r in preset]
+        self.save_rules()
+        return True
+
+    def reset_to_defaults(self):
+        """
+        Reset to baseline demo rules.
+        """
+        self.rules = [FirewallRule.from_dict(r) for r in DEFAULT_RULES]
+        self.save_rules()
+
     def add_rule(self, rule):
         """
         Add a new rule.
@@ -225,6 +370,9 @@ class RuleManager:
 
         if not valid:
             return False, message
+
+        if not rule.rule_id or rule.rule_id == "RULE-CUSTOM":
+            rule.rule_id = f"RULE-{len(self.rules) + 1}"
 
         self.rules.append(rule)
         self.save_rules()

@@ -1,45 +1,44 @@
-# NetFort
+# NetFort — Web Firewall Simulator & Traffic Access Control System
 
-## Network Traffic Security & Access Control System
+[![CI](https://github.com/USERNAME/NetFort/actions/workflows/ci.yml/badge.svg)](https://github.com/USERNAME/NetFort/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.129%2B-009688.svg)
+![React](https://img.shields.io/badge/React-18-61DAFB.svg)
+![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-NetFort is a Python-based **firewall simulator and network traffic access-control system** designed to demonstrate fundamental Network Security concepts through a safe and controlled software environment.
+NetFort is a browser-based **educational firewall simulator and network access control testing platform**. It allows presenters, students, and engineers to explore how **stateless packet filtering** and **stateful inspection** handle the exact same network traffic stream.
 
-The system simulates network packets, evaluates them against configurable firewall rules, and determines whether each packet should be **ALLOWED** or **BLOCKED**.
+Operating strictly within a safe, simulated sandbox, NetFort evaluates synthetic packets without touching the host operating system's firewall rules or capturing real network traffic.
 
-NetFort does not modify the host computer's actual firewall configuration and does not require real network traffic. Instead, it provides a controlled simulation environment that makes firewall concepts easy to understand, test and demonstrate.
+---
+
+## What's New in NetFort v2.0
+
+* **100-Packet Synthetic Traffic Stream**: Generates a realistic, deterministic 100-packet stream (`PKT-001` through `PKT-100`) containing legitimate HTTP/HTTPS web sessions, stateful server responses, DNS queries, unsolicited scans (SSH, RDP, Telnet, SMB), policy violations, malformed headers, and ICMP diagnostics.
+* **Double-Click Raw Packet Inspection**: Double-clicking on **any packet** across the application opens the original wire disassembly in Wireshark / tcpdump text format with IP headers and a raw hex/ASCII frame preview.
+* **Live Step-by-Step Simulation**: Pacing controls (2.0s presentation default, 1.0s, 0.5s, 0.1s, and manual step), 3-stage traffic flow canvas (Queue → Engine Checklist → Allowed/Blocked Decision Lanes), and real-time plain-English reasoning ("Why?").
+* **Compare Firewalls**: Parallel dual-column side-by-side execution comparing Stateless vs Stateful firewalls over the identical 100-packet stream, with difference detection (16 divergent packets, 84 matching).
+* **Firewall Rules Editor**: Ordered rule table with priority drag/reordering, inline IP/CIDR and port validation, preset switcher (`Balanced`, `Strict`, `Order Shadow`), and instant persistence.
+* **Metrics & Analytics**: Vivid data visualizations powered by Recharts (outcome distribution donut, side-by-side grouped bar chart), divergence breakdown, and an interactive plain-English metric glossary.
+* **Filterable Packet Log**: Searchable table across 100 packets with verdict filters, pagination, inspection drawer, and one-click CSV export.
 
 ---
 
 ## Table of Contents
 
 * [Overview](#overview)
-* [Objectives](#objectives)
+* [Quick Start](#quick-start)
 * [Core Concepts](#core-concepts)
-* [How NetFort Works](#how-netfort-works)
 * [System Architecture](#system-architecture)
-* [Architecture Components](#architecture-components)
-* [Firewall Rule Processing](#firewall-rule-processing)
-* [Rule Priority](#rule-priority)
-* [Default Policy](#default-policy)
-* [Stateful Firewall Simulation](#stateful-firewall-simulation)
 * [Project Structure](#project-structure)
 * [Features](#features)
-* [Requirements](#requirements)
-* [Installation](#installation)
 * [Running NetFort](#running-netfort)
-* [Using the Application](#using-the-application)
-* [Adding Firewall Rules](#adding-firewall-rules)
-* [Testing Packets](#testing-packets)
-* [Packet Simulation](#packet-simulation)
-* [Logs and Statistics](#logs-and-statistics)
 * [Running Automated Tests](#running-automated-tests)
-* [Practical Demonstration](#practical-demonstration)
-* [Example Scenarios](#example-scenarios)
+* [Practical Demonstration Flow](#practical-demonstration-flow)
 * [Security Concepts Demonstrated](#security-concepts-demonstrated)
-* [Limitations](#limitations)
-* [Future Enhancements](#future-enhancements)
 * [Technology Stack](#technology-stack)
-* [Conclusion](#conclusion)
+* [Safety & Ethical Boundaries](#safety--ethical-boundaries)
 
 ---
 
@@ -635,28 +634,54 @@ PACKET BLOCKED
 ```text
 NetFort/
 │
-├── main.py
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # Automated CI for backend tests & frontend build
+│
+├── backend/
+│   └── app/
+│       ├── main.py              # FastAPI application & SPA fallback handler
+│       ├── scenarios.py         # 100-packet synthetic traffic generators
+│       ├── api/
+│       │   └── endpoints.py     # REST endpoints (rules, simulations, comparisons)
+│       ├── schemas/
+│       │   └── models.py        # Pydantic data models
+│       └── services/
+│           ├── simulation_service.py # Step-by-step simulator engine
+│           ├── comparison_service.py # Dual-model comparison engine
+│           └── metrics_service.py    # Analytics & KPI formulas
 │
 ├── firewall/
-│   ├── __init__.py
-│   ├── packet.py
-│   ├── rules.py
-│   ├── engine.py
-│   └── state.py
+│   ├── packet.py                # Packet model, wire format generator, validation
+│   ├── rules.py                 # RuleManager, FirewallRule, presets, CIDR matching
+│   ├── engine.py                # Core evaluation engine & structured reasons
+│   └── state.py                 # Stateful 4-tuple conntrack & session timeouts
 │
-├── gui/
-│   ├── __init__.py
-│   └── interface.py
+├── frontend/
+│   ├── src/
+│   │   ├── components/          # AppShell, OutcomeBadge, PacketInspectorModal
+│   │   ├── context/             # Global double-click PacketModalContext
+│   │   ├── pages/               # Dashboard, LiveSim, Compare, Rules, Metrics, PacketLog
+│   │   ├── App.jsx              # Routing & providers
+│   │   └── main.jsx
+│   ├── package.json             # Vite, React 18, Tailwind, Lucide, Recharts
+│   └── tailwind.config.js       # Color palette design tokens
 │
 ├── data/
-│   └── rules.json
+│   └── rules.json               # Persistent demo firewall rules
 │
 ├── logs/
-│   └── firewall.log
+│   └── firewall.log             # Simulation execution audit log
 │
 ├── tests/
-│   └── test_firewall.py
+│   ├── test_firewall.py         # Core packet filtering tests
+│   ├── test_stateful.py         # Stateful connection tracking tests
+│   └── test_api.py              # Backend REST API & 100-packet scenario tests
 │
+├── .env.example                 # Environment variables template
+├── .gitignore                   # Comprehensive ignores (node_modules, dist, logs, venv)
+├── main.py                      # Application launcher (Web server or legacy GUI)
+├── requirements.txt             # Python backend dependencies
 └── README.md
 ```
 
@@ -836,29 +861,59 @@ NetFort primarily uses Python's standard library, so no large dependency install
 
 # Running NetFort
 
-From the root NetFort directory, run:
+### 1. Install Dependencies
+
+```powershell
+pip install -r requirements.txt
+```
+
+### 2. Launch the Web Simulator (Default)
+
+From the root `NetFort` directory, execute:
 
 ```powershell
 python main.py
 ```
 
-The NetFort graphical interface should open.
+Then open your browser to:
+👉 **`http://127.0.0.1:8000`**
 
-The correct directory structure must be maintained because `main.py` imports modules from the `firewall` and `gui` packages.
+### 3. Frontend Development Server (Optional)
+
+If you wish to modify the React frontend with Vite hot-module replacement (HMR):
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend will run on `http://localhost:5173` and automatically proxy API calls to the backend on port `8000`.
+
+### 4. Legacy Desktop GUI (Optional)
+
+If you need the legacy desktop Tkinter GUI:
+
+```powershell
+python main.py --gui
+```
 
 ---
 
-# Using the Application
+# Running Automated Tests
 
-## Step 1 — Launch NetFort
-
-Run:
+Run the full Python test suite (all 27 tests covering firewall engine, stateful conntrack, and REST API):
 
 ```powershell
-python main.py
+python -m unittest discover tests
 ```
 
-The main dashboard opens.
+To test the frontend build:
+
+```powershell
+cd frontend
+npm run build
+```
 
 ---
 

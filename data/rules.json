@@ -1,37 +1,57 @@
 [
     {
-        "source_ip": "192.168.1.50",
-        "destination_ip": "*",
-        "port": "80",
-        "protocol": "TCP",
-        "action": "BLOCK"
-    },
-    {
+        "rule_id": "RULE-1",
+        "name": "Allow Web HTTP",
+        "description": "Allow internal client 192.168.1.10 to reach HTTP port 80",
         "source_ip": "192.168.1.10",
         "destination_ip": "*",
         "port": "80",
         "protocol": "TCP",
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "enabled": true
     },
     {
+        "rule_id": "RULE-2",
+        "name": "Block Telnet Outbound",
+        "description": "Prevent insecure Telnet protocol",
         "source_ip": "192.168.1.20",
         "destination_ip": "*",
         "port": "23",
         "protocol": "TCP",
-        "action": "BLOCK"
+        "action": "BLOCK",
+        "enabled": true
     },
     {
+        "rule_id": "RULE-3",
+        "name": "Allow Outbound HTTPS",
+        "description": "Permit standard TLS/HTTPS traffic for all internal clients",
         "source_ip": "*",
         "destination_ip": "*",
         "port": "443",
         "protocol": "TCP",
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "enabled": true
     },
     {
+        "rule_id": "RULE-4",
+        "name": "Block Rogue Host",
+        "description": "Explicitly deny all traffic from rogue host 10.0.0.5",
         "source_ip": "10.0.0.5",
         "destination_ip": "*",
         "port": "*",
         "protocol": "ANY",
-        "action": "BLOCK"
+        "action": "BLOCK",
+        "enabled": true
+    },
+    {
+        "rule_id": "RULE-5",
+        "name": "Allow DNS Queries",
+        "description": "Permit UDP DNS resolution",
+        "source_ip": "*",
+        "destination_ip": "*",
+        "port": "53",
+        "protocol": "UDP",
+        "action": "ALLOW",
+        "enabled": true
     }
 ]
