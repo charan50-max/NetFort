@@ -1,3 +1,4 @@
+import random
 from typing import List, Dict, Any
 from firewall.packet import Packet
 
@@ -315,6 +316,16 @@ def generate_enterprise_100_scenario() -> List[Packet]:
             payload_summary="ICMP Echo payload (32 bytes data: 'abcdefghijklmnopqrstuvw')"
         ))
         seq += 1
+
+    # Interleave ALLOW/BLOCK packets for a realistic mixed stream.
+    # Use a fixed seed so the order is deterministic across runs (reproducible tests).
+    rng = random.Random(42)
+    rng.shuffle(packets)
+
+    # Re-assign stable sequential IDs and sequence numbers after shuffle.
+    for i, pkt in enumerate(packets, 1):
+        pkt.packet_id = f"PKT-{i:03d}"
+        pkt.sequence = i
 
     return packets
 
